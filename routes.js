@@ -140,42 +140,6 @@ router.delete('/expenses/:id', async (req, res) => {
     }
 });
 
-// --- Rutas de Fotos ---
-router.get('/photos', async (req, res) => {
-    try {
-        const [rows] = await pool.query('SELECT * FROM photos ORDER BY uploadDate DESC');
-        res.json(rows);
-    } catch (error) {
-        res.status(500).json({ message: 'Error al obtener las fotos', error });
-    }
-});
-
-router.post('/photos', upload.single('image'), async (req, res) => {
-    const { description } = req.body;
-    const url = `/uploads/${req.file.filename}`;
-    const newPhoto = { id: randomUUID(), url, uploadDate: new Date(), description };
-    try {
-        await pool.query('INSERT INTO photos SET ?', newPhoto);
-        res.status(201).json(newPhoto);
-    } catch (error) {
-        res.status(500).json({ message: 'Error al subir la foto', error });
-    }
-});
-
-router.delete('/photos/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const [[photo]] = await pool.query('SELECT url FROM photos WHERE id = ?', [id]);
-        if (photo) {
-            await fs.unlink(path.join('uploads', path.basename(photo.url)));
-        }
-        await pool.query('DELETE FROM photos WHERE id = ?', [id]);
-        res.status(204).send();
-    } catch (error) {
-        res.status(500).json({ message: 'Error al eliminar la foto', error });
-    }
-});
-
 // --- Rutas de Servicios ---
 router.get('/services', async (req, res) => {
     try {
@@ -209,6 +173,64 @@ router.delete('/services/:id', async (req, res) => {
         res.status(204).send();
     } catch (error) {
         res.status(500).json({ message: 'Error al eliminar el servicio', error });
+    }
+});
+
+// --- Rutas de Fotos ---
+router.get('/photos', async (req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT * FROM photos ORDER BY uploadDate DESC');
+        res.json(rows);
+    } catch (error) {
+        console.error('Error al obtener fotos:', error);
+        res.status(500).json({ message: 'Error al obtener las fotos', error });
+    }
+});
+
+router.post('/photos', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'No se subió ningún archivo' });
+        }
+
+        const { description } = req.body;
+        const url = `/uploads/${req.file.filename}`;
+        const newPhoto = {
+            id: randomUUID(),
+            url,
+            uploadDate: new Date(),
+            description: description || ''
+        };
+
+        await pool.query('INSERT INTO photos SET ?', newPhoto);
+        res.status(201).json(newPhoto);
+    } catch (error) {
+        console.error('Error al subir foto:', error);
+        res.status(500).json({ message: 'Error al subir la foto', error });
+    }
+});
+
+router.delete('/photos/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Obtener la información de la foto antes de eliminarla
+        const [[photo]] = await pool.query('SELECT url FROM photos WHERE id = ?', [id]);
+        
+        if (photo) {
+            // Eliminar el archivo físico
+            try {
+                await fs.unlink(path.join('uploads', path.basename(photo.url)));
+            } catch (fileError) {
+                console.warn('No se pudo eliminar el archivo físico:', fileError);
+            }
+        }
+        
+        // Eliminar de la base de datos
+        await pool.query('DELETE FROM photos WHERE id = ?', [id]);
+        res.status(204).send();
+    } catch (error) {
+        console.error('Error al eliminar foto:', error);
+        res.status(500).json({ message: 'Error al eliminar la foto', error });
     }
 });
 

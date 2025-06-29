@@ -1,4 +1,3 @@
-
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 
@@ -28,7 +27,10 @@ export const setupDatabase = async () => {
                 source VARCHAR(50) NOT NULL,
                 totalPaid DECIMAL(10, 2) DEFAULT 0.00,
                 commission DECIMAL(10, 2) DEFAULT 0.00,
-                taxes DECIMAL(10, 2) DEFAULT 0.00
+                taxes DECIMAL(10, 2) DEFAULT 0.00,
+                paymentMethod VARCHAR(50),
+                guestCount INT DEFAULT 1,
+                guestPhone VARCHAR(20)
             );
         `);
         
