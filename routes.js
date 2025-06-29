@@ -289,7 +289,7 @@ router.post('/reports/summary', async (req, res) => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const prompt = `
-            Eres un asesor financiero para el dueño de una pequeña cabaña de alquiler.
+            Eres un asesor financiero para el dueño de la cabaña "Santa Teresa" ubicada en Suesca, Cundinamarca.
             Analiza los siguientes datos financieros mensuales (en pesos colombianos, COP) y proporciona un resumen conciso y amigable en español en formato de viñetas (usando asteriscos *).
             El resumen debe incluir:
             - Una visión general del rendimiento.
