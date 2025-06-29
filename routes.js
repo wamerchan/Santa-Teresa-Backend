@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
 import { GoogleGenAI } from '@google/genai';
+import exifr from 'exifr';
 import pool from './database.js';
 import { processICalData } from './ical-parser.js';
 
@@ -195,11 +196,40 @@ router.post('/photos', upload.single('image'), async (req, res) => {
 
         const { description } = req.body;
         const url = `/uploads/${req.file.filename}`;
+        
+        // Extraer metadatos EXIF para obtener la fecha de captura
+        let captureDate = null;
+        let enhancedDescription = description || '';
+        
+        try {
+            const exifData = await exifr.parse(req.file.path);
+            if (exifData && exifData.DateTimeOriginal) {
+                captureDate = exifData.DateTimeOriginal;
+                const formattedDate = captureDate.toLocaleDateString('es-ES', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                
+                // Agregar la fecha de captura a la descripción
+                if (enhancedDescription) {
+                    enhancedDescription += ` (Capturada: ${formattedDate})`;
+                } else {
+                    enhancedDescription = `Capturada: ${formattedDate}`;
+                }
+            }
+        } catch (exifError) {
+            console.log('No se pudieron extraer metadatos EXIF:', exifError.message);
+            // Continúa sin los metadatos EXIF
+        }
+
         const newPhoto = {
             id: randomUUID(),
             url,
             uploadDate: new Date(),
-            description: description || ''
+            description: enhancedDescription
         };
 
         await pool.query('INSERT INTO photos SET ?', newPhoto);
@@ -207,6 +237,20 @@ router.post('/photos', upload.single('image'), async (req, res) => {
     } catch (error) {
         console.error('Error al subir foto:', error);
         res.status(500).json({ message: 'Error al subir la foto', error });
+    }
+});
+
+router.put('/photos/:id', async (req, res) => {
+    const { id } = req.params;
+    const { description } = req.body;
+    
+    try {
+        await pool.query('UPDATE photos SET description = ? WHERE id = ?', [description, id]);
+        const [[updatedPhoto]] = await pool.query('SELECT * FROM photos WHERE id = ?', [id]);
+        res.json(updatedPhoto);
+    } catch (error) {
+        console.error('Error al actualizar foto:', error);
+        res.status(500).json({ message: 'Error al actualizar la descripción de la foto', error });
     }
 });
 
