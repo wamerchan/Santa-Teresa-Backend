@@ -1,4 +1,3 @@
-
 // Unfolds iCal lines. A line starting with a space is a continuation of the previous line.
 function unfold(icalData) {
     return icalData.replace(/\r\n /g, '');
@@ -55,26 +54,38 @@ function parseDate(dateStr) {
 }
 
 function getGuestName(event) {
-    // Ignore common non-guest summaries from Airbnb, Booking.com, etc.
-    const ignoredSummaries = ['reserved', 'not available', 'closed', 'bloqueado', 'cerrado'];
+    // Airbnb/Booking might use generic summaries for blocked dates OR actual reservations.
+    // We will now process all events to ensure dates are blocked,
+    // and try to find a guest name if possible.
     const summaryLower = event.summary?.toLowerCase() || '';
 
-    if (ignoredSummaries.some(ignored => summaryLower.includes(ignored))) {
-        return null; // This indicates it's a blocked date, not a reservation
-    }
-
+    // Try to extract name from description first, as it might be more specific.
     if (event.description) {
         const guestMatch = event.description.match(/GUEST:\s*(.*?)(\\n|$)/i);
         if (guestMatch && guestMatch[1]) {
             return guestMatch[1].trim();
         }
     }
+
+    // If summary contains ignored words, but we haven't found a name yet,
+    // it's likely a blocked period. We still return a generic name to block the calendar.
+    const ignoredSummaries = ['not available', 'closed', 'bloqueado', 'cerrado'];
+    if (ignoredSummaries.some(ignored => summaryLower.includes(ignored))) {
+        return 'Bloqueado';
+    }
+
+    // For other summaries (like "Reserved - John Doe" or just "Reserved"),
+    // try to clean it up, but fall back to a generic name if it's empty.
     if (event.summary) {
+        // Remove details in parentheses, e.g., (HMJ12345678)
         const cleanedSummary = event.summary.replace(/\(.*\)/, '').trim();
-        if (cleanedSummary) {
+        // If the summary is just "Reserved", this will become empty.
+        if (cleanedSummary && !summaryLower.startsWith('reserved')) {
             return cleanedSummary;
         }
     }
+
+    // Fallback for any other case (e.g., summary was just "Reserved")
     return 'Reservado';
 }
 
@@ -84,7 +95,8 @@ export function processICalData(icalData, source) {
 
     for (const event of events) {
         const guestName = getGuestName(event);
-        // Only process events that are actual reservations (have a guest name)
+        // Now we process the event as long as getGuestName returns any string.
+        // This ensures blocked dates are also synced.
         if (guestName) {
             reservations.push({
                 id: event.uid,

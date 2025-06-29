@@ -1,4 +1,3 @@
-
 import { Router } from 'express';
 import multer from 'multer';
 import { randomUUID } from 'crypto';
@@ -34,8 +33,8 @@ router.get('/reservations', async (req, res) => {
 });
 
 router.post('/reservations', async (req, res) => {
-    const { guestName, checkIn, checkOut, source, totalPaid, commission, taxes } = req.body;
-    const newReservation = { id: randomUUID(), guestName, checkIn, checkOut, source, totalPaid, commission, taxes };
+    const { guestName, checkIn, checkOut, source, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone } = req.body;
+    const newReservation = { id: randomUUID(), guestName, checkIn, checkOut, source, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone };
     try {
         await pool.query('INSERT INTO reservations SET ?', newReservation);
         res.status(201).json(newReservation);
@@ -46,9 +45,9 @@ router.post('/reservations', async (req, res) => {
 
 router.put('/reservations/:id', async (req, res) => {
     const { id } = req.params;
-    const { guestName, totalPaid, commission, taxes } = req.body;
+    const { guestName, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone } = req.body;
     try {
-        await pool.query('UPDATE reservations SET guestName = ?, totalPaid = ?, commission = ?, taxes = ? WHERE id = ?', [guestName, totalPaid, commission, taxes, id]);
+        await pool.query('UPDATE reservations SET guestName = ?, totalPaid = ?, commission = ?, taxes = ?, paymentMethod = ?, guestCount = ?, guestPhone = ? WHERE id = ?', [guestName, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone, id]);
         const [[updatedReservation]] = await pool.query('SELECT * FROM reservations WHERE id = ?', [id]);
         res.json(updatedReservation);
     } catch (error) {
@@ -100,11 +99,12 @@ router.post('/reservations/sync', async (req, res) => {
             connection.release();
         }
 
-        const [rows] = await pool.query('SELECT * FROM reservations ORDER BY checkIn DESC');
-        res.json(rows);
+        // Después de sincronizar, siempre devolver todas las reservas actualizadas
+        const [allReservations] = await pool.query('SELECT * FROM reservations ORDER BY checkIn DESC');
+        res.json(allReservations);
 
     } catch (error) {
-        console.error("Error syncing calendars:", error);
+        console.error('Error en la sincronización de iCal:', error);
         res.status(500).json({ message: error instanceof Error ? error.message : 'Error desconocido al sincronizar' });
     }
 });
