@@ -10,6 +10,22 @@ import { processICalData } from './ical-parser.js';
 
 const router = Router();
 
+// --- Función utilitaria para detectar conflictos de fechas ---
+const checkDateOverlap = (newCheckIn, newCheckOut, existingCheckIn, existingCheckOut) => {
+    const newStart = new Date(newCheckIn);
+    const newEnd = new Date(newCheckOut);
+    const existingStart = new Date(existingCheckIn);
+    const existingEnd = new Date(existingCheckOut);
+    
+    // Verificar si hay superposición de fechas
+    return (newStart < existingEnd && newEnd > existingStart);
+};
+
+const formatDateRange = (checkIn, checkOut) => {
+    const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
+    return `${new Date(checkIn).toLocaleDateString('es-CO', options)} - ${new Date(checkOut).toLocaleDateString('es-CO', options)}`;
+};
+
 // --- Configuración de Multer para subida de archivos ---
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -86,18 +102,51 @@ router.post('/reservations/sync', async (req, res) => {
             const connection = await pool.getConnection();
             await connection.beginTransaction();
 
+            let insertedCount = 0;
+            let skippedCount = 0;
+
             for (const res of allNewSynced) {
-                 await connection.query(`
-                    INSERT INTO reservations (id, guestName, checkIn, checkOut, source, totalPaid, commission, taxes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE
-                    checkIn = VALUES(checkIn),
-                    checkOut = VALUES(checkOut)
-                `, [res.id, res.guestName, res.checkIn, res.checkOut, res.source, res.totalPaid, res.commission, res.taxes]);
+                // Verificar si ya existe una reserva que se superponga con las fechas de la nueva reserva
+                const [existingReservations] = await connection.query(`
+                    SELECT id, guestName, checkIn, checkOut, source 
+                    FROM reservations 
+                    WHERE (
+                        (checkIn <= ? AND checkOut > ?) OR
+                        (checkIn < ? AND checkOut >= ?) OR
+                        (checkIn >= ? AND checkOut <= ?)
+                    )
+                `, [res.checkIn, res.checkIn, res.checkOut, res.checkOut, res.checkIn, res.checkOut]);
+
+                // Validación adicional usando la función utilitaria
+                const hasConflict = existingReservations.some(existing => 
+                    checkDateOverlap(res.checkIn, res.checkOut, existing.checkIn, existing.checkOut)
+                );
+
+                if (!hasConflict) {
+                    // No hay conflictos de fechas, insertar la nueva reserva
+                    await connection.query(`
+                        INSERT INTO reservations (id, guestName, checkIn, checkOut, source, totalPaid, commission, taxes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    `, [res.id, res.guestName, res.checkIn, res.checkOut, res.source, res.totalPaid, res.commission, res.taxes]);
+                    insertedCount++;
+                    console.log(`✅ Nueva reserva insertada: ${res.guestName} [${res.source}] ${formatDateRange(res.checkIn, res.checkOut)}`);
+                } else {
+                    // Ya existe una reserva en este rango de fechas, omitir para evitar sobrescribir
+                    const conflictingReservation = existingReservations[0];
+                    skippedCount++;
+                    console.log(`⚠️  Reserva omitida por conflicto de fechas:`);
+                    console.log(`   Nueva: ${res.guestName} [${res.source}] ${formatDateRange(res.checkIn, res.checkOut)}`);
+                    console.log(`   Existente: ${conflictingReservation.guestName} [${conflictingReservation.source}] ${formatDateRange(conflictingReservation.checkIn, conflictingReservation.checkOut)}`);
+                }
             }
             
             await connection.commit();
             connection.release();
+
+            console.log(`\n📊 Sincronización completada:`);
+            console.log(`   ✅ ${insertedCount} reservas nuevas insertadas`);
+            console.log(`   ⚠️  ${skippedCount} omitidas por conflictos de fechas`);
+            console.log(`   📋 Total procesadas: ${allNewSynced.length}\n`);
         }
 
         // Después de sincronizar, siempre devolver todas las reservas actualizadas
