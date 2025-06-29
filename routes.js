@@ -3,7 +3,7 @@ import multer from 'multer';
 import { randomUUID } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import exifr from 'exifr';
 import pool from './database.js';
 import { processICalData } from './ical-parser.js';
@@ -331,35 +331,71 @@ router.delete('/photos/:id', async (req, res) => {
 router.post('/reports/summary', async (req, res) => {
     const { monthlyData } = req.body;
     
-    if (!process.env.API_KEY) {
-        return res.status(500).json({ message: 'La clave de API de Gemini no está configurada en el servidor.' });
+    // Verificar si la API key está configurada
+    if (!process.env.API_KEY || process.env.API_KEY === 'tu_clave_aqui') {
+        return res.status(500).json({ 
+            message: 'La clave de API de Gemini no está configurada en el servidor. Por favor, configura la variable API_KEY en el archivo .env del backend. Consulta GEMINI_API_SETUP.md para más detalles.' 
+        });
+    }
+
+    // Verificar que hay datos para analizar
+    if (!monthlyData || monthlyData.length === 0) {
+        return res.status(400).json({ 
+            message: 'No hay datos financieros suficientes para generar un resumen. Agrega algunas reservas y gastos primero.' 
+        });
     }
 
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        console.log('🤖 Generando resumen con IA para', monthlyData.length, 'meses de datos...');
+        
+        const genAI = new GoogleGenerativeAI(process.env.API_KEY);
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        
         const prompt = `
             Eres un asesor financiero para el dueño de la cabaña "Santa Teresa" ubicada en Suesca, Cundinamarca.
-            Analiza los siguientes datos financieros mensuales (en pesos colombianos, COP) y proporciona un resumen conciso y amigable en español en formato de viñetas (usando asteriscos *).
-            El resumen debe incluir:
-            - Una visión general del rendimiento.
-            - El mes con mayor ganancia y el mes con mayor gasto.
-            - Cualquier tendencia notable (ej. aumento de gastos, crecimiento de ingresos).
-            - Una recomendación o punto de atención basado en los datos.
+            Analiza los siguientes datos financieros mensuales (en pesos colombianos, COP) y proporciona un resumen conciso y amigable en español.
             
-            Aquí están los datos:
+            FORMATO REQUERIDO:
+            • Usa viñetas con asteriscos (*)
+            • Máximo 6-8 puntos
+            • Lenguaje claro y directo
+            • Incluye números específicos cuando sea relevante
+            
+            CONTENIDO REQUERIDO:
+            • Una visión general del rendimiento
+            • El mes con mayor ganancia y el mes con mayor gasto
+            • Tendencias notables (crecimiento de ingresos, aumento de gastos, etc.)
+            • Una recomendación práctica basada en los datos
+            
+            DATOS FINANCIEROS:
             ${JSON.stringify(monthlyData, null, 2)}
         `;
         
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-preview-04-17',
-            contents: prompt
-        });
-
-        res.json({ summary: response.text });
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const summary = response.text();
+        
+        console.log('✅ Resumen generado exitosamente');
+        res.json({ summary });
 
     } catch (e) {
-        console.error("Error generating AI summary:", e);
-        res.status(500).json({ message: "Hubo un error al contactar al servicio de IA." });
+        console.error("❌ Error generating AI summary:", e);
+        
+        if (e.message && e.message.includes('API_KEY')) {
+            return res.status(500).json({ 
+                message: 'Error de autenticación con la API de Gemini. Verifica que tu API key sea válida.' 
+            });
+        }
+        
+        if (e.message && e.message.includes('quota')) {
+            return res.status(500).json({ 
+                message: 'Has excedido la cuota de la API de Gemini. Intenta de nuevo más tarde o verifica tu configuración.' 
+            });
+        }
+        
+        res.status(500).json({ 
+            message: "Hubo un error al contactar al servicio de IA. Revisa la consola del servidor para más detalles." 
+        });
     }
 });
 
