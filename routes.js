@@ -85,18 +85,24 @@ router.delete('/reservations/:id', async (req, res) => {
 router.post('/reservations/sync', async (req, res) => {
     const ICAL_URLS = {
         Airbnb: 'https://www.airbnb.com.co/calendar/ical/1393681463200159712.ics?s=d8920001f5b39f149df57eb5fde6677c',
-        'Booking.com': 'https://ical.booking.com/v1/export?t=1aed69b5-63bf-47fb-8385-d0c07502e1c5',
+        'Booking.com': 'https://ical.booking.com/v1/export?t=9fd18761-b1a2-46c2-aea3-206c685929a5',
     };
 
     try {
+        console.log('🔄 Iniciando sincronización de calendarios...');
+        
         const fetchPromises = Object.entries(ICAL_URLS).map(async ([source, url]) => {
+            console.log(`📥 Descargando calendario de ${source}...`);
             const response = await fetch(url, { cache: 'no-store' });
             if (!response.ok) throw new Error(`Error al cargar calendario de ${source}`);
             const text = await response.text();
-            return processICalData(text, source);
+            const events = processICalData(text, source);
+            console.log(`✅ ${source}: ${events.length} eventos encontrados`);
+            return events;
         });
 
         const allNewSynced = (await Promise.all(fetchPromises)).flat();
+        console.log(`📊 Total de eventos procesados: ${allNewSynced.length}`);
 
         if (allNewSynced.length > 0) {
             const connection = await pool.getConnection();
