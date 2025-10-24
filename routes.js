@@ -62,9 +62,9 @@ router.post('/reservations', async (req, res) => {
 
 router.put('/reservations/:id', async (req, res) => {
     const { id } = req.params;
-    const { guestName, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone } = req.body;
+    const { guestName, checkIn, checkOut, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone } = req.body;
     try {
-        await pool.query('UPDATE reservations SET guestName = ?, totalPaid = ?, commission = ?, taxes = ?, paymentMethod = ?, guestCount = ?, guestPhone = ? WHERE id = ?', [guestName, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone, id]);
+        await pool.query('UPDATE reservations SET guestName = ?, checkIn = ?, checkOut = ?, totalPaid = ?, commission = ?, taxes = ?, paymentMethod = ?, guestCount = ?, guestPhone = ? WHERE id = ?', [guestName, checkIn, checkOut, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone, id]);
         const [[updatedReservation]] = await pool.query('SELECT * FROM reservations WHERE id = ?', [id]);
         res.json(updatedReservation);
     } catch (error) {
