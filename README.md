@@ -67,3 +67,4 @@ npm start
 El servidor se iniciará (por defecto en el puerto 4000) y automáticamente creará las tablas necesarias en la base de datos si no existen.
 
 Ahora, tu aplicación frontend debería poder comunicarse con el backend. ¡Asegúrate de que el frontend también esté corriendo!
+## Backend Version 2.0
