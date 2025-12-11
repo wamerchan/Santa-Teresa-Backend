@@ -62,9 +62,9 @@ router.post('/reservations', async (req, res) => {
 
 router.put('/reservations/:id', async (req, res) => {
     const { id } = req.params;
-    const { guestName, checkIn, checkOut, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone } = req.body;
+    const { guestName, checkIn, checkOut, source, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone } = req.body;
     try {
-        await pool.query('UPDATE reservations SET guestName = ?, checkIn = ?, checkOut = ?, totalPaid = ?, commission = ?, taxes = ?, paymentMethod = ?, guestCount = ?, guestPhone = ? WHERE id = ?', [guestName, checkIn, checkOut, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone, id]);
+        await pool.query('UPDATE reservations SET guestName = ?, checkIn = ?, checkOut = ?, source = ?, totalPaid = ?, commission = ?, taxes = ?, paymentMethod = ?, guestCount = ?, guestPhone = ? WHERE id = ?', [guestName, checkIn, checkOut, source, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone, id]);
         const [[updatedReservation]] = await pool.query('SELECT * FROM reservations WHERE id = ?', [id]);
         res.json(updatedReservation);
     } catch (error) {
@@ -149,10 +149,12 @@ router.post('/reservations/sync', async (req, res) => {
             await connection.commit();
             connection.release();
 
-            console.log(`\n📊 Sincronización completada:`);
+            console.log(`
+📊 Sincronización completada:`);
             console.log(`   ✅ ${insertedCount} reservas nuevas insertadas`);
             console.log(`   ⚠️  ${skippedCount} omitidas por conflictos de fechas`);
-            console.log(`   📋 Total procesadas: ${allNewSynced.length}\n`);
+            console.log(`   📋 Total procesadas: ${allNewSynced.length}
+`);
         }
 
         // Después de sincronizar, siempre devolver todas las reservas actualizadas
@@ -353,10 +355,10 @@ router.post('/reports/summary', async (req, res) => {
 
     try {
         console.log('🤖 Generando resumen con IA para', monthlyData.length, 'meses de datos...');
-        
+
         const genAI = new GoogleGenerativeAI(process.env.API_KEY);
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-        
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash"});
+
         const prompt = `
             Eres un asesor financiero para el dueño de la cabaña "Santa Teresa" ubicada en Suesca, Cundinamarca.
             Analiza los siguientes datos financieros mensuales (en pesos colombianos, COP) y proporciona un resumen conciso y amigable en español.
@@ -400,10 +402,31 @@ router.post('/reports/summary', async (req, res) => {
         }
         
         res.status(500).json({ 
-            message: "Hubo un error al contactar al servicio de IA. Revisa la consola del servidor para más detalles." 
+            message: "Hubo un error al contactar al servicio de IA. Revisa la consola del servidor para más detalles."
         });
     }
 });
 
 
 export default router;
+
+// --- RUTA TEMPORAL: Listar modelos disponibles (solo para diagnóstico) ---
+router.get('/ai/models', async (req, res) => {
+    try {
+        const ai = new GoogleGenerativeAI(process.env.API_KEY);
+
+        // Intentar listar modelos (si la API lo soporta)
+        if (ai.models && typeof ai.models.list === 'function') {
+            const list = await ai.models.list();
+            return res.json({ models: list });
+        }
+
+        // Si list no existe, devolver claves del objeto para inspección
+        const keys = Object.keys(ai).concat(Object.getOwnPropertyNames(Object.getPrototypeOf(ai)));
+        return res.json({ message: 'list no disponible; inspeccionando GoogleGenAI', keys });
+
+    } catch (e) {
+        console.error('Error listando modelos IA (nuevo SDK):', e);
+        res.status(500).json({ message: 'Error listando modelos IA', error: String(e) });
+    }
+});
