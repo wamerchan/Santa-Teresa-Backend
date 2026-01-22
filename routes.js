@@ -51,24 +51,62 @@ router.get('/reservations', async (req, res) => {
 
 router.post('/reservations', async (req, res) => {
     const { guestName, checkIn, checkOut, source, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone } = req.body;
-    const newReservation = { id: randomUUID(), guestName, checkIn, checkOut, source, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone };
+    
+    // Convertir valores numéricos a números y manejar nulos
+    // Convertir fechas ISO a formato YYYY-MM-DD
+    const sanitizedData = {
+        id: randomUUID(),
+        guestName: guestName || '',
+        checkIn: checkIn ? new Date(checkIn).toISOString().split('T')[0] : checkIn,
+        checkOut: checkOut ? new Date(checkOut).toISOString().split('T')[0] : checkOut,
+        source,
+        totalPaid: totalPaid === null || totalPaid === undefined || totalPaid === '' ? 0 : Number(totalPaid),
+        commission: commission === null || commission === undefined || commission === '' ? 0 : Number(commission),
+        taxes: taxes === null || taxes === undefined || taxes === '' ? 0 : Number(taxes),
+        paymentMethod: paymentMethod || null,
+        guestCount: guestCount === null || guestCount === undefined || guestCount === '' ? 1 : Number(guestCount),
+        guestPhone: guestPhone || ''
+    };
+
     try {
-        await pool.query('INSERT INTO reservations SET ?', newReservation);
-        res.status(201).json(newReservation);
+        await pool.query('INSERT INTO reservations SET ?', sanitizedData);
+        res.status(201).json(sanitizedData);
     } catch (error) {
-        res.status(500).json({ message: 'Error al crear la reserva', error });
+        console.error('❌ Error al crear reserva:', error);
+        res.status(500).json({ message: 'Error al crear la reserva', error: error.message });
     }
 });
 
 router.put('/reservations/:id', async (req, res) => {
     const { id } = req.params;
     const { guestName, checkIn, checkOut, source, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone } = req.body;
+    
+    // Convertir valores numéricos a números y manejar nulos
+    // Convertir fechas ISO a formato YYYY-MM-DD
+    const sanitizedData = {
+        guestName: guestName || '',
+        checkIn: checkIn ? new Date(checkIn).toISOString().split('T')[0] : checkIn,
+        checkOut: checkOut ? new Date(checkOut).toISOString().split('T')[0] : checkOut,
+        source,
+        totalPaid: totalPaid === null || totalPaid === undefined || totalPaid === '' ? 0 : Number(totalPaid),
+        commission: commission === null || commission === undefined || commission === '' ? 0 : Number(commission),
+        taxes: taxes === null || taxes === undefined || taxes === '' ? 0 : Number(taxes),
+        paymentMethod: paymentMethod || null,
+        guestCount: guestCount === null || guestCount === undefined || guestCount === '' ? 1 : Number(guestCount),
+        guestPhone: guestPhone || ''
+    };
+
     try {
-        await pool.query('UPDATE reservations SET guestName = ?, checkIn = ?, checkOut = ?, source = ?, totalPaid = ?, commission = ?, taxes = ?, paymentMethod = ?, guestCount = ?, guestPhone = ? WHERE id = ?', [guestName, checkIn, checkOut, source, totalPaid, commission, taxes, paymentMethod, guestCount, guestPhone, id]);
-        const [[updatedReservation]] = await pool.query('SELECT * FROM reservations WHERE id = ?', [id]);
-        res.json(updatedReservation);
+        console.log('📝 Actualizando reserva:', { id, ...sanitizedData });
+        await pool.query('UPDATE reservations SET guestName = ?, checkIn = ?, checkOut = ?, source = ?, totalPaid = ?, commission = ?, taxes = ?, paymentMethod = ?, guestCount = ?, guestPhone = ? WHERE id = ?', [sanitizedData.guestName, sanitizedData.checkIn, sanitizedData.checkOut, sanitizedData.source, sanitizedData.totalPaid, sanitizedData.commission, sanitizedData.taxes, sanitizedData.paymentMethod, sanitizedData.guestCount, sanitizedData.guestPhone, id]);
+        const [rows] = await pool.query('SELECT * FROM reservations WHERE id = ?', [id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Reserva no encontrada' });
+        }
+        res.json(rows[0]);
     } catch (error) {
-        res.status(500).json({ message: 'Error al actualizar la reserva', error });
+        console.error('❌ Error al actualizar reserva:', error);
+        res.status(500).json({ message: 'Error al actualizar la reserva', error: error.message });
     }
 });
 
@@ -223,9 +261,14 @@ router.post('/services', upload.single('image'), async (req, res) => {
 router.delete('/services/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        const [[service]] = await pool.query('SELECT imageUrl FROM services WHERE id = ?', [id]);
-        if (service) {
-            await fs.unlink(path.join('uploads', path.basename(service.imageUrl)));
+        const [services] = await pool.query('SELECT imageUrl FROM services WHERE id = ?', [id]);
+        if (services.length > 0) {
+            const service = services[0];
+            try {
+                await fs.unlink(path.join('uploads', path.basename(service.imageUrl)));
+            } catch (fileError) {
+                console.warn('No se pudo eliminar el archivo físico del servicio:', fileError);
+            }
         }
         await pool.query('DELETE FROM services WHERE id = ?', [id]);
         res.status(204).send();
@@ -303,8 +346,11 @@ router.put('/photos/:id', async (req, res) => {
     
     try {
         await pool.query('UPDATE photos SET description = ? WHERE id = ?', [description, id]);
-        const [[updatedPhoto]] = await pool.query('SELECT * FROM photos WHERE id = ?', [id]);
-        res.json(updatedPhoto);
+        const [rows] = await pool.query('SELECT * FROM photos WHERE id = ?', [id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Foto no encontrada' });
+        }
+        res.json(rows[0]);
     } catch (error) {
         console.error('Error al actualizar foto:', error);
         res.status(500).json({ message: 'Error al actualizar la descripción de la foto', error });
@@ -315,9 +361,10 @@ router.delete('/photos/:id', async (req, res) => {
     const { id } = req.params;
     try {
         // Obtener la información de la foto antes de eliminarla
-        const [[photo]] = await pool.query('SELECT url FROM photos WHERE id = ?', [id]);
+        const [photos] = await pool.query('SELECT url FROM photos WHERE id = ?', [id]);
         
-        if (photo) {
+        if (photos.length > 0) {
+            const photo = photos[0];
             // Eliminar el archivo físico
             try {
                 await fs.unlink(path.join('uploads', path.basename(photo.url)));
